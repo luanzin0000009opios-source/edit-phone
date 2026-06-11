@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EditPhone - Gartic de Edição de Vídeo</title>
+    <!-- Tailwind CSS para UI responsiva -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- PeerJS para conexões P2P gratuitas -->
+    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+    <style>
+        /* Estilos customizados para a timeline */
+        .timeline-track {
+            background-image: linear-gradient(to right, rgba(255,255,255,0.05) 1px, transparent 1px);
+            background-size: 20px 100%;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white font-sans min-h-screen flex flex-col justify-between">
+
+    <!-- HEADER -->
+    <header class="bg-gray-800 p-4 border-b border-gray-700 flex justify-between items-center">
+        <h1 class="text-xl font-bold text-red-500 tracking-wider">EDIT PHONE</h1>
+        <div id="connection-status" class="text-xs bg-red-600/30 text-red-400 px-3 py-1 rounded-full">
+            Desconectado
+        </div>
+    </header>
+
+    <!-- ÁREA PRINCIPAL -->
+    <main class="flex-1 container mx-auto p-4 flex flex-col justify-center items-center">
+        
+        <!-- TELA 1: LOBBY / ENTRADA -->
+        <section id="screen-lobby" class="w-full max-w-md bg-gray-800 p-6 rounded-lg border border-gray-700 space-y-4">
+            <h2 class="text-lg font-semibold text-center">Configuração de Perfil</h2>
+            
+            <div>
+                <label class="block text-sm text-gray-400 mb-1">Seu Nome</label>
+                <input type="text" id="username" class="w-full bg-gray-700 border border-gray-600 rounded p-2 text-white focus:outline-none focus:border-red-500" placeholder="Ex: EditorPro">
+            </div>
+
+            <div>
+                <label class="block text-sm text-gray-400 mb-1">Foto de Perfil (URL ou upload)</label>
+                <input type="file" id="pfp-upload" accept="image/*" class="text-sm text-gray-400 block w-full file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-red-500 file:text-white hover:file:bg-red-600 cursor-pointer">
+            </div>
+
+            <div class="border-t border-gray-700 my-4 pt-4">
+                <h3 class="text-sm font-semibold text-gray-300 mb-2">Conectar ao Jogo</h3>
+                <div class="space-y-2">
+                    <button id="btn-create-room" class="w-full bg-red-600 hover:bg-red-700 py-2 rounded font-medium transition">Criar Sala (Host)</button>
+                    <div class="flex gap-2">
+                        <input type="text" id="room-id-input" class="flex-1 bg-gray-700 border border-gray-600 rounded p-2 text-sm focus:outline-none" placeholder="Código da Sala">
+                        <button id="btn-join-room" class="bg-gray-700 hover:bg-gray-600 px-4 rounded text-sm transition">Entrar</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="room-info" class="hidden text-center text-sm text-green-400 bg-green-950/30 p-2 rounded border border-green-800">
+                Sala Criada! Código: <span id="display-room-id" class="font-mono font-bold select-all"></span>
+            </div>
+        </section>
+
+        <!-- TELA 2: SALA DE ESPERA (LOBBY DO JOGO) -->
+        <section id="screen-waiting" class="hidden w-full max-w-lg bg-gray-800 p-6 rounded-lg border border-gray-700 space-y-4">
+            <h2 class="text-xl font-bold text-center">Jogadores na Sala</h2>
+            <ul id="players-list" class="space-y-2 max-h-48 overflow-y-auto">
+                <!-- Inserido dinamicamente -->
+            </ul>
+
+            <div class="border-t border-gray-700 pt-4">
+                <label class="block text-sm text-gray-400 mb-2">Selecione o Modo de Jogo:</label>
+                <div class="grid grid-cols-2 gap-4">
+                    <button id="mode-easy" class="mode-select-btn border-2 border-red-500 bg-red-950/30 p-3 rounded text-center block">
+                        <span class="font-bold block">Fácil</span>
+                        <span class="text-xs text-gray-400">Estilo Movie Maker (Simples)</span>
+                    </button>
+                    <button id="mode-medium" class="mode-select-btn border border-gray-600 hover:border-red-500 p-3 rounded text-center block">
+                        <span class="font-bold block">Médio</span>
+                        <span class="text-xs text-gray-400">Estilo CapCut (Timeline)</span>
+                    </button>
+                </div>
+            </div>
+
+            <button id="btn-start-game" class="w-full bg-green-600 hover:bg-green-700 py-3 rounded-lg font-bold transition">Começar Jogo</button>
+        </section>
+
+        <!-- TELA 3: ESTAÇÃO DE EDIÇÃO (GAMEPLAY) -->
+        <section id="screen-editor" class="hidden w-full max-w-5xl bg-gray-800 rounded-lg border border-gray-700 flex flex-col overflow-hidden">
+            <!-- Barra superior do Editor (Tempo e Prompt) -->
+            <div class="bg-gray-850 p-3 border-b border-gray-700 flex justify-between items-center px-6">
+                <div>
+                    <span class="text-xs text-gray-400 uppercase tracking-wider block">Tema / Desafio</span>
+                    <span id="editor-prompt" class="font-bold text-sm text-yellow-400">"Crie uma abertura de filme de ação dramática"</span>
+                </div>
+                <div class="text-right">
+                    <span class="text-xs text-gray-400 block">Tempo Restante</span>
+                    <span id="timer-display" class="font-mono text-xl font-bold text-red-500">02:00</span>
+                </div>
+            </div>
+
+            <!-- Grid de Trabalho -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 flex-1">
+                
+                <!-- Coluna 1: Recursos & Gravação de Câmera -->
+                <div class="bg-gray-900 p-3 rounded border border-gray-700 space-y-4 flex flex-col h-[320px] md:h-[450px]">
+                    <h3 class="font-bold text-xs uppercase text-gray-400 border-b border-gray-700 pb-2">Banco de Mídias</h3>
+                    
+                    <!-- Aba de Gravação de Câmera -->
+                    <div class="bg-gray-800 p-2 rounded">
+                        <span class="text-xs block text-gray-400 mb-1">Gravar com a WebCam</span>
+                        <video id="webcam-preview" autoplay muted class="w-full h-24 bg-black rounded mb-2 object-cover"></video>
+                        <div class="flex gap-2">
+                            <button id="btn-cam-record" class="flex-1 bg-red-600 hover:bg-red-700 text-xs py-1.5 rounded font-medium">Gravar</button>
+                            <button id="btn-cam-stop" class="flex-1 bg-gray-700 hover:bg-gray-600 text-xs py-1.5 rounded font-medium" disabled>Parar</button>
+                        </div>
+                    </div>
+
+                    <!-- Mídias Locais e Assets Padrão -->
+                    <div class="flex-1 overflow-y-auto space-y-2 pr-1">
+                        <div>
+                            <span class="text-xs block text-gray-400 mb-1">Importar Arquivo</span>
+                            <input type="file" id="media-importer" accept="video/*,audio/*,image/*" class="text-xs text-gray-400 block w-full">
+                        </div>
+                        <div class="border-t border-gray-800 pt-2">
+                            <span class="text-xs block text-gray-400 mb-1">Assets Disponíveis:</span>
+                            <div id="assets-list" class="grid grid-cols-2 gap-2 text-xs">
+                                <!-- Assets simulados para testes rápidos -->
+                                <button onclick="addAssetToTimeline('https://www.w3schools.com/html/mov_bbb.mp4', 'video', 'Coelho')" class="bg-gray-800 p-2 rounded hover:bg-gray-700 text-left truncate">📹 Coelho (Vídeo)</button>
+                                <button onclick="addAssetToTimeline('https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3', 'audio', 'Música 1')" class="bg-gray-800 p-2 rounded hover:bg-gray-700 text-left truncate">🎵 Música Eletrônica</button>
+                                <button onclick="addAssetToTimeline('https://picsum.photos/400/300', 'image', 'Foto')" class="bg-gray-800 p-2 rounded hover:bg-gray-700 text-left truncate">🖼️ Foto Aleatória</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Coluna 2 & 3: Player e Linha do Tempo -->
+                <div class="md:col-span-2 flex flex-col justify-between space-y-4">
+                    <!-- Player de Vídeo -->
+                    <div class="bg-black rounded border border-gray-700 flex-1 flex items-center justify-center relative aspect-video max-h-[300px]">
+                        <video id="main-player" class="w-full h-full object-contain" controls></video>
+                        <div id="transition-overlay" class="absolute inset-0 bg-black opacity-0 pointer-events-none transition-all duration-500"></div>
+                    </div>
+
+                    <!-- UI INTERATIVA DO EDITOR (SE ADAPTA AO MODO DE JOGO) -->
+                    <div id="editor-interface" class="bg-gray-900 p-3 rounded border border-gray-700">
+                        
+                        <!-- MODO FÁCIL (MOVIE MAKER STYLE) -->
+                        <div id="mode-easy-timeline" class="space-y-3">
+                            <span class="text-xs text-gray-400 uppercase tracking-wider block font-bold">Modo Movie Maker (Arraste e Junte)</span>
+                            <div class="flex items-center gap-2 overflow-x-auto p-2 bg-gray-800 rounded min-h-[80px]" id="easy-clips-container">
+                                <!-- Blocos de vídeo/imagens sequenciais -->
+                                <div class="text-gray-500 text-xs italic p-4 text-center w-full">Adicione mídias para começar...</div>
+                            </div>
+                            <!-- Seleção de Transição global ou por corte -->
+                            <div class="flex items-center gap-4 text-xs">
+                                <label class="text-gray-400">Efeito de Transição:</label>
+                                <select id="easy-transition-select" class="bg-gray-800 border border-gray-700 p-1.5 rounded">
+                                    <option value="none">Corte Seco (Nenhum)</option>
+                                    <option value="fade">Esmaecer (Fade Out/In)</option>
+                                    <option value="slide">Deslizar (Slide Left)</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- MODO MÉDIO (CAPCUT STYLE) -->
+                        <div id="mode-medium-timeline" class="hidden space-y-3">
+                            <span class="text-xs text-gray-400 uppercase tracking-wider block font-bold">Modo CapCut (Multifaixas)</span>
+                            <div class="space-y-2 bg-gray-800 p-2 rounded">
+                                <!-- Faixa de Vídeo -->
+                                <div class="flex items-center gap-2">
+                                    <span class="w-12 text-xs text-gray-400 font-mono">VÍDEO:</span>
+                                    <div id="track-video" class="flex-1 h-8 bg-gray-700/50 rounded border border-dashed border-gray-600 relative overflow-hidden timeline-track flex items-center p-1"></div>
+                                </div>
+                                <!-- Faixa de Áudio -->
+                                <div class="flex items-center gap-2">
+                                    <span class="w-12 text-xs text-gray-400 font-mono">ÁUDIO:</span>
+                                    <div id="track-audio" class="flex-1 h-8 bg-gray-700/50 rounded border border-dashed border-gray-600 relative overflow-hidden timeline-track flex items-center p-1"></div>
+                                </div>
+                            </div>
+                            <div class="flex justify-between items-center text-xs">
+                                <div class="flex gap-2">
+                                    <button onclick="clearTimeline()" class="bg-red-950/50 hover:bg-red-950 border border-red-800 px-3 py-1 rounded">Limpar Tudo</button>
+                                </div>
+                                <span class="text-gray-400 text-[10px] italic">Pressione nos blocos para ajustar posições</span>
+                            </div>
+                        </div>
+
+                    </div>
+                    
+                    <button id="btn-submit-edit" class="w-full bg-green-600 hover:bg-green-700 py-2.5 rounded font-bold transition">Enviar Edição Concluída</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- TELA 4: EXIBIÇÃO / REVELAÇÃO -->
+        <section id="screen-reveal" class="hidden w-full max-w-2xl bg-gray-800 p-6 rounded-lg border border-gray-700 text-center space-y-6">
+            <h2 class="text-2xl font-bold text-yellow-400">Cinema Time! 🍿</h2>
+            <p class="text-sm text-gray-300">Assista e compare a criação do seu grupo!</p>
+            
+            <div class="bg-black rounded border border-gray-700 aspect-video flex items-center justify-center">
+                <video id="reveal-player" class="w-full h-full object-contain" controls></video>
+            </div>
+
+            <div class="border-t border-gray-700 pt-4 flex justify-between items-center">
+                <div>
+                    <span class="text-xs text-gray-400 block">Editado por:</span>
+                    <span id="reveal-author" class="font-bold">Jogador A</span>
+                </div>
+                <button id="btn-next-reveal" class="bg-red-600 hover:bg-red-700 px-6 py-2 rounded font-semibold transition">Próximo Vídeo</button>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- FOOTER -->
+    <footer class="bg-gray-800/50 p-3 text-center text-xs text-gray-500 border-t border-gray-850">
+        Desenvolvido com PeerJS e Tailwind CSS. Ideal para rodar direto do GitHub Pages.
+    </footer>
+
+    <!-- LÓGICA DE PROGRAMAÇÃO (JS) -->
+    <script>
+        // --- Estado Global do Jogo ---
+        let peer = null;
+        let conn = null; // Para conexão de convidado
+        let connections = []; // Para controle de conexões do Host
+        let isHost = false;
+        let myId = '';
+        let myName = 'Anônimo';
+        let myPfp = 'https://picsum.photos/80';
+        let gameMode = 'easy'; // 'easy' (Movie Maker) ou 'medium' (CapCut)
+        let timerInterval = null;
+        let localMediaStream = null;
+        let mediaRecorder = null;
+        let recordedChunks = [];
+        let projectAssets = []; // Guarda as mídias da nossa timeline atual
+
+        // Elementos da UI
+        const screens = {
+            lobby: document.getElementById('screen-lobby'),
+            waiting: document.getElementById('screen-waiting'),
+            editor: document.getElementById('screen-editor'),
+            reveal: document.getElementById('screen-reveal')
+        };
+
+        function switchScreen(screenKey) {
+            Object.values(screens).forEach(screen => screen.classList.add('hidden'));
+            screens[screenKey].classList.remove('hidden');
+        }
+
+        // --- Inicialização PeerJS ---
+        function initPeer() {
+            peer = new Peer({
+                host: '0.peerjs.com',
+                port: 443,
+                secure: true,
+                debug: 1
+            });
+
+            peer.on('open', (id) => {
+                myId = id;
+                document.getElementById('connection-status').innerText = 'Pronto';
+                document.getElementById('connection-status').className = 'text-xs bg-green-600/30 text-green-400 px-3 py-1 rounded-full';
+            });
+
+            peer.on('error', (err) => {
+                console.error("Erro no PeerJS:", err);
+                alert("Ocorreu um erro na rede. Tente recarregar a página.");
+            });
+        }
+
+        // Criar Sala
+        document.getElementById('btn-create-room').addEventListener('click', () => {
+            getProfileData();
+            isHost = true;
+            initPeer();
+            
+            peer.on('open', (id) => {
+                document.getElementById('room-info').classList.remove('hidden');
+                document.getElementById('display-room-id').innerText = id;
+                switchScreen('waiting');
+                updatePlayersList([{ name: myName, id: 'Você (Host)' }]);
+            });
+
+            // Escuta novas conexões (Apenas Host recebe conexões adicionais)
+            peer.on('connection', (connection) => {
+                connections.push(connection);
+                setupConnectionListeners(connection);
+                
+                // Responder com lista atualizada de jogadores
+                broadcast({ type: 'player-join', name: connection.metadata.name, id: connection.peer });
+            });
+        });
+
+        // Entrar na Sala
+        document.getElementById('btn-join-room').addEventListener('click', () => {
+            const roomId = document.getElementById('room-id-input').value.trim();
+            if (!roomId) return alert("Por favor, digite o código da sala.");
+
+            getProfileData();
+            isHost = false;
+            initPeer();
+
+            peer.on('open', () => {
+                conn = peer.connect(roomId, {
+                    metadata: { name: myName }
+                });
+                setupConnectionListeners(conn);
+            });
+        });
+
+        function getProfileData() {
+            const nameInput = document.getElementById('username').value.trim();
+            if (nameInput) myName = nameInput;
+        }
+
+        function setupConnectionListeners(connection) {
+            connection.on('open', () => {
+                document.getElementById('connection-status').innerText = 'Conectado';
+                document.getElementById('connection-status').className = 'text-xs bg-blue-600/30 text-blue-400 px-3 py-1 rounded-full';
+                if (!isHost) {
+                    switchScreen('waiting');
+                }
+            });
+
+            connection.on('data', (data) => {
+                if (data.type === 'start-game') {
+                    gameMode = data.mode;
+                    startGameplay();
+                }
+                // Tratamento de mensagens adicionais para dinâmicas do jogo
+            });
+        }
+
+        function broadcast(data) {
+            if (isHost) {
+                connections.forEach(c => {
+                    if (c.open) c.send(data);
+                });
+            } else if (conn && conn.open) {
+                conn.send(data);
+            }
+        }
+
+        function updatePlayersList(players) {
+            const list = document.getElementById('players-list');
+            list.innerHTML = '';
+            players.forEach(p => {
+                const li = document.createElement('li');
+                li.className = "flex items-center gap-3 bg-gray-700/50 p-2 rounded border border-gray-600";
+                li.innerHTML = `<div class="w-8 h-8 rounded-full bg-red-600 flex items-center justify-center font-bold text-sm">${p.name[0]}</div>
+                                <span class="font-medium text-sm">${p.name}</span>`;
+                list.appendChild(li);
+            });
+        }
+
+        // --- Configuração dos Modos ---
+        const modeEasyBtn = document.getElementById('mode-easy');
+        const modeMediumBtn = document.getElementById('mode-medium');
+
+        modeEasyBtn.addEventListener('click', () => {
+            gameMode = 'easy';
+            modeEasyBtn.classList.add('border-red-500', 'bg-red-950/30');
+            modeEasyBtn.classList.remove('border-gray-600');
+            modeMediumBtn.classList.add('border-gray-600');
+            modeMediumBtn.classList.remove('border-red-500', 'bg-red-950/30');
+        });
+
+        modeMediumBtn.addEventListener('click', () => {
+            gameMode = 'medium';
+            modeMediumBtn.classList.add('border-red-500', 'bg-red-950/30');
+            modeMediumBtn.classList.remove('border-gray-600');
+            modeEasyBtn.classList.add('border-gray-600');
+            modeEasyBtn.classList.remove('border-red-500', 'bg-red-950/30');
+        });
+
+        // --- Fluxo de Jogo ---
+        document.getElementById('btn-start-game').addEventListener('click', () => {
+            if (isHost) {
+                broadcast({ type: 'start-game', mode: gameMode });
+                startGameplay();
+            } else {
+                alert("Apenas o Host pode iniciar o jogo.");
+            }
+        });
+
+        function startGameplay() {
+            switchScreen('editor');
+            
+            // Configurar a UI baseada no modo
+            if (gameMode === 'easy') {
+                document.getElementById('mode-easy-timeline').classList.remove('hidden');
+                document.getElementById('mode-medium-timeline').classList.add('hidden');
+            } else {
+                document.getElementById('mode-easy-timeline').classList.add('hidden');
+                document.getElementById('mode-medium-timeline').classList.remove('hidden');
+            }
+
+            setupCamera();
+            startTimer(120); // 2 minutos
+        }
+
+        // --- Sistema de Gravação de Câmera (Webcam) ---
+        async function setupCamera() {
+            try {
+                localMediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                document.getElementById('webcam-preview').srcObject = localMediaStream;
+            } catch (err) {
+                console.warn("Não foi possível acessar a câmera:", err);
+            }
+        }
+
+        const btnRecord = document.getElementById('btn-cam-record');
+        const btnStop = document.getElementById('btn-cam-stop');
+
+        btnRecord.addEventListener('click', () => {
+            if (!localMediaStream) return alert("Câmera não disponível.");
+            recordedChunks = [];
+            mediaRecorder = new MediaRecorder(localMediaStream, { mimeType: 'video/webm' });
+
+            mediaRecorder.ondataavailable = (e) => {
+                if (e.data.size > 0) recordedChunks.push(e.data);
+            };
+
+            mediaRecorder.onstop = () => {
+                const blob = new Blob(recordedChunks, { type: 'video/webm' });
+                const videoURL = URL.createObjectURL(blob);
+                addAssetToTimeline(videoURL, 'video', 'Minha Gravação');
+            };
+
+            mediaRecorder.start();
+            btnRecord.disabled = true;
+            btnRecord.innerText = "Gravando...";
+            btnStop.disabled = false;
+        });
+
+        btnStop.addEventListener('click', () => {
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+                btnRecord.disabled = false;
+                btnRecord.innerText = "Gravar";
+                btnStop.disabled = true;
+            }
+        });
+
+        // --- Importação de Mídia Local ---
+        document.getElementById('media-importer').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const fileURL = URL.createObjectURL(file);
+            let type = 'video';
+            if (file.type.startsWith('audio/')) type = 'audio';
+            else if (file.type.startsWith('image/')) type = 'image';
+
+            addAssetToTimeline(fileURL, type, file.name);
+        });
+
+        // --- Manipulação da Timeline (Edição) ---
+        function addAssetToTimeline(url, type, label) {
+            const asset = { id: Date.now(), url, type, label };
+            projectAssets.push(asset);
+
+            if (gameMode === 'easy') {
+                renderEasyTimeline();
+            } else {
+                renderMediumTimeline();
+            }
+            
+            // Define a mídia adicionada como preview inicial
+            const player = document.getElementById('main-player');
+            if (type === 'video' || type === 'image') {
+                player.src = url;
+            }
+        }
+
+        function renderEasyTimeline() {
+            const container = document.getElementById('easy-clips-container');
+            container.innerHTML = '';
+
+            if (projectAssets.length === 0) {
+                container.innerHTML = `<div class="text-gray-500 text-xs italic p-4 text-center w-full">Adicione mídias para começar...</div>`;
+                return;
+            }
+
+            projectAssets.forEach((asset, idx) => {
+                const block = document.createElement('div');
+                block.className = "flex items-center shrink-0 bg-gray-700 border border-gray-600 rounded p-2 text-xs relative select-none cursor-pointer";
+                block.innerHTML = `
+                    <span>${asset.type === 'video' ? '📹' : asset.type === 'image' ? '🖼️' : '🎵'} ${asset.label}</span>
+                    <button class="ml-2 text-red-500 hover:text-red-400 font-bold" onclick="removeAsset(${asset.id}, event)">X</button>
+                `;
+                block.addEventListener('click', () => {
+                    playAsset(asset);
+                });
+                container.appendChild(block);
+
+                // Adiciona indicador de transição entre blocos (exceto o último)
+                if (idx < projectAssets.length - 1) {
+                    const transIndicator = document.createElement('div');
+                    transIndicator.className = "text-xs bg-red-600/40 text-red-300 font-bold px-1.5 py-0.5 rounded border border-red-500/50 cursor-pointer select-none";
+                    transIndicator.innerText = "⇄";
+                    transIndicator.title = "Transição Ativa";
+                    container.appendChild(transIndicator);
+                }
+            });
+        }
+
+        function renderMediumTimeline() {
+            const trackVideo = document.getElementById('track-video');
+            const trackAudio = document.getElementById('track-audio');
+            
+            trackVideo.innerHTML = '';
+            trackAudio.innerHTML = '';
+
+            projectAssets.forEach(asset => {
+                const block = document.createElement('div');
+                block.className = "absolute h-6 bg-red-600 hover:bg-red-500 rounded text-[10px] flex items-center justify-between px-2 cursor-pointer border border-red-800 text-white truncate shadow";
+                block.style.width = "100px"; // Simulado fixo para facilidade no protótipo
+                block.style.left = "10px"; // Simulado
+                block.innerHTML = `<span>${asset.label}</span> <button onclick="removeAsset(${asset.id}, event)">x</button>`;
+                
+                block.addEventListener('click', () => {
+                    playAsset(asset);
+                });
+
+                if (asset.type === 'video' || asset.type === 'image') {
+                    trackVideo.appendChild(block);
+                } else {
+                    block.className = "absolute h-6 bg-blue-600 hover:bg-blue-500 rounded text-[10px] flex items-center justify-between px-2 cursor-pointer border border-blue-800 text-white truncate shadow";
+                    block.style.width = "150px";
+                    trackAudio.appendChild(block);
+                }
+            });
+        }
+
+        function playAsset(asset) {
+            const player = document.getElementById('main-player');
+            const overlay = document.getElementById('transition-overlay');
+            const transitionType = document.getElementById('easy-transition-select').value;
+
+            // Executa efeito de transição se configurado
+            if (transitionType !== 'none') {
+                if (transitionType === 'fade') {
+                    overlay.classList.remove('opacity-0');
+                    overlay.classList.add('opacity-100');
+                    setTimeout(() => {
+                        player.src = asset.url;
+                        player.play().catch(() => {});
+                        overlay.classList.remove('opacity-100');
+                        overlay.classList.add('opacity-0');
+                    }, 500);
+                    return;
+                }
+            }
+
+            player.src = asset.url;
+            player.play().catch(() => {});
+        }
+
+        function removeAsset(id, event) {
+            event.stopPropagation();
+            projectAssets = projectAssets.filter(asset => asset.id !== id);
+            if (gameMode === 'easy') renderEasyTimeline();
+            else renderMediumTimeline();
+        }
+
+        function clearTimeline() {
+            projectAssets = [];
+            renderMediumTimeline();
+        }
+
+        // --- Sistema de Tempo (Cronômetro) ---
+        function startTimer(durationInSeconds) {
+            let timer = durationInSeconds;
+            const display = document.getElementById('timer-display');
+
+            clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+                const minutes = Math.floor(timer / 60);
+                const seconds = timer % 60;
+
+                const minStr = minutes < 10 ? '0' + minutes : minutes;
+                const secStr = seconds < 10 ? '0' + seconds : seconds;
+
+                display.innerText = `${minStr}:${secStr}`;
+
+                if (--timer < 0) {
+                    clearInterval(timerInterval);
+                    autoSubmitEdit();
+                }
+            }, 1000);
+        }
+
+        // --- Envio de Resultado / Revelação ---
+        document.getElementById('btn-submit-edit').addEventListener('click', () => {
+            finishRound();
+        });
+
+        function autoSubmitEdit() {
+            alert("O tempo acabou! Enviando o vídeo atual automaticamente.");
+            finishRound();
+        }
+
+        function finishRound() {
+            clearInterval(timerInterval);
+            if (localMediaStream) {
+                localMediaStream.getTracks().forEach(track => track.stop());
+            }
+
+            // Exibir a tela final de revelação
+            switchScreen('reveal');
+
+            // Pegar o último vídeo gerado no projeto ou simular um vídeo final compilado
+            const lastVideo = projectAssets.find(a => a.type === 'video');
+            const revealPlayer = document.getElementById('reveal-player');
+            const revealAuthor = document.getElementById('reveal-author');
+
+            if (lastVideo) {
+                revealPlayer.src = lastVideo.url;
+            } else {
+                // Vídeo genérico caso o jogador não tenha adicionado nenhum
+                revealPlayer.src = 'https://www.w3schools.com/html/mov_bbb.mp4';
+            }
+            revealAuthor.innerText = myName;
+        }
+
+        document.getElementById('btn-next-reveal').addEventListener('click', () => {
+            alert("Obrigado por testar o EditPhone! Próximas fases e dinâmicas podem ser expandidas via WebRTC de acordo com as regras de passagem do Gartic Phone.");
+            // Reseta para tela inicial
+            location.reload();
+        });
+
+    </script>
+</body>
+</html>
